@@ -103,7 +103,7 @@ The SKU column is **not strictly required** for the URL Mapper script to work, b
 
 ❌ **Without SKUs (Alternative):**
 - The script will fall back to **name-based similarity matching**.
-- It extracts product names from URLs and compares them.
+- It extracts content titles and product names from URLs and compares them.
 - Matches rely on **text similarity**, which may have a lower confidence level.
 - Output match types will be labeled as `"exact_match"`, `"high_confidence_match"`, etc.
 
