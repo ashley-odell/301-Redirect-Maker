@@ -1,44 +1,98 @@
-// Use built-in fetch for Node.js 18+
-const fetch = (...args) => import('node:fetch').then(({default: fetch}) => fetch(...args));
+/**
+ * Generic URL Mapper
+ * 
+ * This script maps URLs from an old site to a new site using SKU matching and name-based similarity.
+ * It detects and prevents redirect loops, handles various CSV formats, and generates comprehensive reports.
+ * 
+ * Usage: node generic-url-mapper.js [options]
+ * 
+ * Configuration: Edit the CONFIG object below to customize for your project.
+ */
+
 const fs = require('fs');
 const path = require('path');
 
-// Fetch and parse CSV data from remote URL or local file
+// ======================================
+// CONFIGURATION - Edit these settings
+// ======================================
+const CONFIG = {
+  // Input/Output files
+  oldUrlsFile: 'old-urls.csv',
+  newUrlsFile: 'new-urls.csv',
+  outputFile: 'url-mapping.csv',
+  loopsFile: 'skipped-loops.csv',
+  
+  // Base URL for the new site (used for category redirects)
+  newSiteBaseUrl: 'https://example.com',
+  
+  // CSV parsing options
+  csvDelimiters: [',', '\t', ';', ' '],
+  hasHeaderRow: 'auto', // 'auto', true, or false
+  
+  // Matching options
+  similarityThreshold: 0.5,      // Minimum similarity score to consider a match
+  highConfidenceThreshold: 0.8,  // Threshold for high confidence matches
+  mediumConfidenceThreshold: 0.6, // Threshold for medium confidence matches
+  
+  // URL patterns
+  productUrlPatterns: ['/product/', '/shop/'],
+  categoryUrlPatterns: ['/product-category/', '/category/', '/shop/'],
+  
+  // Category mappings (old category slug -> new category path)
+  categoryMappings: {
+    // Example: 'old-category': '/new-category-path/',
+  },
+  
+  // Batch processing to manage memory usage
+  batchSize: 250,
+  
+  // Debug options
+  verbose: true,
+  showSamples: true,
+  sampleSize: 5
+};
+
+// ======================================
+// UTILITY FUNCTIONS
+// ======================================
+
+// Log message if verbose mode is enabled
+function log(message) {
+  if (CONFIG.verbose) {
+    console.log(message);
+  }
+}
+
+// Fetch and parse CSV data from local file
 async function fetchCSV(source) {
   try {
-    let text;
-    
-    if (source.startsWith('http://') || source.startsWith('https://')) {
-      console.log(`Fetching remote file: ${source}`);
-      const response = await fetch(source);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${source}: ${response.status} ${response.statusText}`);
-      }
-      text = await response.text();
-      console.log(`Successfully fetched ${source} (${text.length} bytes)`);
-    } else {
-      // Check if file exists
-      if (!fs.existsSync(source)) {
-        throw new Error(`File not found: ${source}`);
-      }
-      text = fs.readFileSync(source, 'utf8');
-      console.log(`Read local file: ${source} (${text.length} bytes)`);
+    if (!fs.existsSync(source)) {
+      throw new Error(`File not found: ${source}`);
     }
+    
+    const text = fs.readFileSync(source, 'utf8');
+    log(`Read file: ${source} (${text.length} bytes)`);
     
     // Parse the CSV data
     const lines = text.split('\n').filter(line => line.trim() !== '');
-    console.log(`Found ${lines.length} non-empty lines in ${source}`);
+    log(`Found ${lines.length} non-empty lines in ${source}`);
     
-    // Check if there's a header row
+    // Determine if there's a header row
     let startIndex = 0;
     if (lines.length > 0) {
       const firstLine = lines[0];
-      // Skip header if it doesn't look like data
-      if (!firstLine.includes('/product/') && 
-          !firstLine.includes('http') &&
-          !firstLine.match(/^[A-Z]{2}\.\d+\.\d+/)) {
+      let hasHeader = CONFIG.hasHeaderRow;
+      
+      if (hasHeader === 'auto') {
+        // Auto-detect header: if first line doesn't look like data
+        hasHeader = !CONFIG.productUrlPatterns.some(pattern => firstLine.includes(pattern)) && 
+                   !firstLine.includes('http') &&
+                   !firstLine.match(/^[A-Z]{2}\.\d+\.\d+/);
+      }
+      
+      if (hasHeader === true) {
         startIndex = 1;
-        console.log(`Skipping header row: ${firstLine}`);
+        log(`Skipping header row: ${firstLine}`);
       }
     }
     
@@ -49,25 +103,29 @@ async function fetchCSV(source) {
       if (!line) continue;
       
       // Detect delimiter and parse
-      let parts;
-      if (line.includes(',')) {
-        parts = line.split(',');
-      } else if (line.includes('\t')) {
-        parts = line.split('\t');
-      } else if (line.includes(';')) {
-        parts = line.split(';');
-      } else {
-        // Space-separated - assume first word is SKU, rest is URL
-        const spaceIndex = line.indexOf(' ');
-        if (spaceIndex > 0) {
-          parts = [
-            line.substring(0, spaceIndex),
-            line.substring(spaceIndex + 1)
-          ];
-        } else {
-          console.log(`Warning: Could not parse line: ${line}`);
-          continue;
+      let parts = null;
+      
+      // Try each configured delimiter
+      for (const delimiter of CONFIG.csvDelimiters) {
+        if (delimiter === ' ') {
+          // Special handling for space delimiter
+          const spaceIndex = line.indexOf(' ');
+          if (spaceIndex > 0) {
+            parts = [
+              line.substring(0, spaceIndex),
+              line.substring(spaceIndex + 1)
+            ];
+            break;
+          }
+        } else if (line.includes(delimiter)) {
+          parts = line.split(delimiter);
+          break;
         }
+      }
+      
+      if (!parts) {
+        log(`Warning: Could not parse line: ${line}`);
+        continue;
       }
       
       // Clean up parts
@@ -78,17 +136,17 @@ async function fetchCSV(source) {
         const url = parts[1];
         entries.push({ sku, url });
       } else {
-        console.log(`Warning: Line has insufficient columns: ${line}`);
+        log(`Warning: Line has insufficient columns: ${line}`);
       }
     }
     
-    console.log(`Successfully parsed ${entries.length} entries from ${source}`);
+    log(`Successfully parsed ${entries.length} entries from ${source}`);
     
     // Show sample entries
-    if (entries.length > 0) {
-      console.log(`Sample entries from ${source}:`);
-      entries.slice(0, 3).forEach(entry => {
-        console.log(`  SKU: ${entry.sku}, URL: ${entry.url}`);
+    if (CONFIG.showSamples && entries.length > 0) {
+      log(`Sample entries from ${source}:`);
+      entries.slice(0, CONFIG.sampleSize).forEach(entry => {
+        log(`  SKU: ${entry.sku}, URL: ${entry.url}`);
       });
     }
     
@@ -110,15 +168,18 @@ function extractProductName(url) {
     const segments = path.split('/').filter(s => s);
     let productName = segments[segments.length - 1];
     
-    if (path.includes('/product/') && segments.length > 1) {
-      const productIndex = segments.indexOf('product');
-      if (productIndex < segments.length - 1) {
-        productName = segments[productIndex + 1];
+    // Check for product URL patterns
+    for (const pattern of CONFIG.productUrlPatterns) {
+      if (path.includes(pattern)) {
+        const patternIndex = segments.indexOf(pattern.replace(/\//g, ''));
+        if (patternIndex >= 0 && patternIndex < segments.length - 1) {
+          productName = segments[patternIndex + 1];
+        } else {
+          // Use last segment as fallback
+          productName = segments[segments.length - 1];
+        }
+        break;
       }
-    }
-    
-    if (path.includes('/shop/') && segments.length > 2) {
-      productName = segments[segments.length - 1];
     }
     
     return cleanProductName(productName);
@@ -202,28 +263,12 @@ function areUrlsEffectivelySame(oldUrl, newUrl) {
   }
 }
 
-// Category mappings
-const categoryMappings = {
-  'corrugate': '/product-category/corrugated-boxes/',
-  'stretch-film': '/product-category/stretch-wrap-film/',
-  'tapes-adhesives': '/product-category/tapes-adhesives/',
-  'shipping-mailing': '/product-category/shipping-supplies/',
-  'health-safety': '/product-category/safety-supplies/',
-  'janitorial': '/product-category/janitorial-supplies/',
-  'labelling': '/product-category/labels/',
-  'plastic-poly': '/product-category/poly-bags/',
-  'protective-packaging': '/product-category/protective-packaging/',
-  'strapping': '/product-category/strapping/',
-  'material-handling': '/product-category/material-handling/',
-  'keygifts': '/keygifts/',
-};
-
 // Process a single batch of URLs
 function processBatch(oldProducts, newProductIndex, skuIndex) {
   const mapping = [];
   const unmapped = [];
   const categoryMappings = [];
-  const loopDetected = []; // New array to track potential redirect loops
+  const loopDetected = []; // Track potential redirect loops
   
   for (let i = 0; i < oldProducts.length; i++) {
     const oldProduct = oldProducts[i];
@@ -255,11 +300,9 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
       continue;
     }
     
-    // If no SKU match, proceed with existing logic
-    const isProduct = oldProduct.url.includes('/product/') || 
-                     (oldProduct.url.includes('/shop/') && oldProduct.url.split('/').filter(s => s).length > 2);
-    const isCategory = oldProduct.url.includes('/product-category/') || 
-                      (oldProduct.url.includes('/shop/') && oldProduct.url.split('/').filter(s => s).length <= 3);
+    // Determine if this is a product or category URL
+    const isProduct = CONFIG.productUrlPatterns.some(pattern => oldProduct.url.includes(pattern));
+    const isCategory = CONFIG.categoryUrlPatterns.some(pattern => oldProduct.url.includes(pattern));
     
     if (!isProduct) {
       if (isCategory) {
@@ -268,12 +311,13 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
           const path = urlObj.pathname;
           const segments = path.split('/').filter(s => s);
           
+          // Try to find a category match
           const categorySlug = segments.find(segment => 
-            Object.keys(categoryMappings).some(key => segment === key)
+            Object.keys(CONFIG.categoryMappings).some(key => segment === key)
           );
           
-          if (categorySlug && categoryMappings[categorySlug]) {
-            const newCategoryUrl = `https://keypak.tbkdev.com${categoryMappings[categorySlug]}`;
+          if (categorySlug && CONFIG.categoryMappings[categorySlug]) {
+            const newCategoryUrl = `${CONFIG.newSiteBaseUrl}${CONFIG.categoryMappings[categorySlug]}`;
             
             // Check for potential redirect loops
             if (areUrlsEffectivelySame(oldProduct.url, newCategoryUrl)) {
@@ -318,7 +362,7 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
       
       for (const [name, products] of Object.entries(newProductIndex)) {
         const similarity = calculateNameSimilarity(productName, name);
-        if (similarity > 0.5) {
+        if (similarity > CONFIG.similarityThreshold) {
           similarities.push({
             similarity,
             products
@@ -353,9 +397,9 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
       let matchType;
       if (similarity === 1.0) {
         matchType = 'exact_match';
-      } else if (similarity >= 0.8) {
+      } else if (similarity >= CONFIG.highConfidenceThreshold) {
         matchType = 'high_confidence_match';
-      } else if (similarity >= 0.6) {
+      } else if (similarity >= CONFIG.mediumConfidenceThreshold) {
         matchType = 'medium_confidence_match';
       } else {
         matchType = 'low_confidence_match';
@@ -380,29 +424,34 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
 // Main function to generate URL mapping
 async function generateURLMapping() {
   console.log("Generating URL mapping with SKU matching and loop detection...");
+  console.log("Using configuration:");
+  console.log(`- Old URLs file: ${CONFIG.oldUrlsFile}`);
+  console.log(`- New URLs file: ${CONFIG.newUrlsFile}`);
+  console.log(`- Output file: ${CONFIG.outputFile}`);
+  console.log(`- New site base URL: ${CONFIG.newSiteBaseUrl}`);
+  console.log(`- Similarity threshold: ${CONFIG.similarityThreshold}`);
+  console.log(`- Batch size: ${CONFIG.batchSize}`);
 
   try {
     // Get the directory of the current script
     const scriptDir = __dirname;
     
     // Local CSV file paths
-    const oldUrlsFile = path.join(scriptDir, 'old-urls.csv');
-    const newUrlsFile = path.join(scriptDir, 'new-urls.csv');
+    const oldUrlsFile = path.join(scriptDir, CONFIG.oldUrlsFile);
+    const newUrlsFile = path.join(scriptDir, CONFIG.newUrlsFile);
     
-    console.log(`Looking for CSV files in: ${scriptDir}`);
-    console.log(`Old URLs file: ${oldUrlsFile}`);
-    console.log(`New URLs file: ${newUrlsFile}`);
+    log(`Looking for CSV files in: ${scriptDir}`);
     
     // Check if files exist
     if (!fs.existsSync(oldUrlsFile)) {
       console.error(`Error: File not found: ${oldUrlsFile}`);
-      console.error('Please make sure old-urls.csv is in the same directory as this script.');
+      console.error(`Please make sure ${CONFIG.oldUrlsFile} is in the same directory as this script.`);
       return;
     }
     
     if (!fs.existsSync(newUrlsFile)) {
       console.error(`Error: File not found: ${newUrlsFile}`);
-      console.error('Please make sure new-urls.csv is in the same directory as this script.');
+      console.error(`Please make sure ${CONFIG.newUrlsFile} is in the same directory as this script.`);
       return;
     }
     
@@ -425,7 +474,7 @@ async function generateURLMapping() {
       }
     });
     
-    console.log(`Created SKU index with ${Object.keys(skuIndex).length} entries`);
+    log(`Created SKU index with ${Object.keys(skuIndex).length} entries`);
 
     // Create product name index for fallback matching
     const newProductIndex = {};
@@ -439,10 +488,10 @@ async function generateURLMapping() {
       }
     });
     
-    console.log(`Created product name index with ${Object.keys(newProductIndex).length} entries`);
+    log(`Created product name index with ${Object.keys(newProductIndex).length} entries`);
 
     // Process in batches
-    const batchSize = 250;
+    const batchSize = CONFIG.batchSize;
     const totalBatches = Math.ceil(oldURLs.length / batchSize);
     
     let allMappings = [];
@@ -451,7 +500,7 @@ async function generateURLMapping() {
     let allLoopDetected = []; // Track all potential redirect loops
     
     for (let batchNum = 0; batchNum < totalBatches; batchNum++) {
-      console.log(`\nProcessing batch ${batchNum + 1} of ${totalBatches}...`);
+      log(`\nProcessing batch ${batchNum + 1} of ${totalBatches}...`);
       
       const startIndex = batchNum * batchSize;
       const endIndex = Math.min((batchNum + 1) * batchSize, oldURLs.length);
@@ -459,11 +508,11 @@ async function generateURLMapping() {
       
       const { mapping, unmapped, categoryMappings, loopDetected } = processBatch(batchURLs, newProductIndex, skuIndex);
       
-      console.log(`Batch ${batchNum + 1} results:`);
-      console.log(`- Mapped: ${mapping.length} URLs`);
-      console.log(`- Unmapped: ${unmapped.length} URLs`);
-      console.log(`- Categories: ${categoryMappings.length} URLs`);
-      console.log(`- Potential loops: ${loopDetected.length} URLs`);
+      log(`Batch ${batchNum + 1} results:`);
+      log(`- Mapped: ${mapping.length} URLs`);
+      log(`- Unmapped: ${unmapped.length} URLs`);
+      log(`- Categories: ${categoryMappings.length} URLs`);
+      log(`- Potential loops: ${loopDetected.length} URLs`);
       
       allMappings = allMappings.concat(mapping);
       allUnmapped = allUnmapped.concat(unmapped);
@@ -491,23 +540,25 @@ async function generateURLMapping() {
       });
 
     // Sample results
-    console.log("\nSample of mapped URLs:");
-    allMappings.slice(0, 10).forEach(({ oldURL, newURL, oldName, newName, matchType, similarity, sku }) => {
-      console.log(`- ${oldURL} → ${newURL}`);
-      console.log(`  Product: "${oldName}" → "${newName}"`);
-      console.log(`  Match type: ${matchType}, Similarity: ${similarity}${sku ? `, SKU: ${sku}` : ''}`);
-    });
-
-    console.log("\nSample of unmapped URLs:");
-    allUnmapped.slice(0, 5).forEach(url => console.log(`- ${url}`));
-    
-    // Sample of detected loops
-    if (allLoopDetected.length > 0) {
-      console.log("\nSample of detected redirect loops (skipped):");
-      allLoopDetected.slice(0, 5).forEach(loop => {
-        console.log(`- ${loop.oldURL} → ${loop.newURL}`);
-        console.log(`  Reason: ${loop.reason}`);
+    if (CONFIG.showSamples) {
+      console.log("\nSample of mapped URLs:");
+      allMappings.slice(0, CONFIG.sampleSize).forEach(({ oldURL, newURL, oldName, newName, matchType, similarity, sku }) => {
+        console.log(`- ${oldURL} → ${newURL}`);
+        console.log(`  Product: "${oldName}" → "${newName}"`);
+        console.log(`  Match type: ${matchType}, Similarity: ${similarity}${sku ? `, SKU: ${sku}` : ''}`);
       });
+
+      console.log("\nSample of unmapped URLs:");
+      allUnmapped.slice(0, CONFIG.sampleSize).forEach(url => console.log(`- ${url}`));
+      
+      // Sample of detected loops
+      if (allLoopDetected.length > 0) {
+        console.log("\nSample of detected redirect loops (skipped):");
+        allLoopDetected.slice(0, CONFIG.sampleSize).forEach(loop => {
+          console.log(`- ${loop.oldURL} → ${loop.newURL}`);
+          console.log(`  Reason: ${loop.reason}`);
+        });
+      }
     }
 
     // Save complete results to CSV file
@@ -526,7 +577,7 @@ async function generateURLMapping() {
     });
     
     // Write to file
-    const outputFile = path.join(scriptDir, 'complete-url-mapping.csv');
+    const outputFile = path.join(scriptDir, CONFIG.outputFile);
     fs.writeFileSync(outputFile, fullCsvContent);
     console.log(`\nComplete CSV file has been saved as: ${outputFile}`);
     
@@ -538,10 +589,12 @@ async function generateURLMapping() {
         loopsCsvContent += `"${oldURL}","${newURL}","${reason}","${oldName || ''}","${newName || ''}","${sku || ''}"\n`;
       });
       
-      const loopsFile = path.join(scriptDir, 'skipped-loops.csv');
+      const loopsFile = path.join(scriptDir, CONFIG.loopsFile);
       fs.writeFileSync(loopsFile, loopsCsvContent);
       console.log(`\nPotential redirect loops have been saved as: ${loopsFile}`);
     }
+
+    console.log("\nURL mapping complete!");
 
   } catch (error) {
     console.error("Error in URL mapping process:", error);
