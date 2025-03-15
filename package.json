@@ -11,5 +11,13 @@
   "dependencies": {
     "node-fetch": "^2.7.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ashley-odell/301-Redirect-Maker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ashley-odell/301-Redirect-Maker/issues"
+  },
+  "homepage": "https://github.com/ashley-odell/301-Redirect-Maker#readme",
   "description": ""
 }

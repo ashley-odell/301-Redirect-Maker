@@ -1,5 +1,7 @@
-const fetch = require('node-fetch');
+// Use built-in fetch for Node.js 18+
+const fetch = (...args) => import('node:fetch').then(({default: fetch}) => fetch(...args));
 const fs = require('fs');
+const path = require('path');
 
 // Fetch and parse CSV data from remote URL or local file
 async function fetchCSV(source) {
@@ -15,6 +17,7 @@ async function fetchCSV(source) {
       text = await response.text();
       console.log(`Successfully fetched ${source} (${text.length} bytes)`);
     } else {
+      // Check if file exists
       if (!fs.existsSync(source)) {
         throw new Error(`File not found: ${source}`);
       }
@@ -162,6 +165,43 @@ function calculateNameSimilarity(name1, name2) {
   return intersection.size / union.size;
 }
 
+// Check if two URLs are effectively the same (to prevent redirect loops)
+function areUrlsEffectivelySame(oldUrl, newUrl) {
+  try {
+    // Normalize URLs for comparison
+    const normalizeUrl = (url) => {
+      // Handle URLs that don't start with http
+      const fullUrl = url.startsWith('http') ? url : `https://example.com${url}`;
+      const urlObj = new URL(fullUrl);
+      
+      // Get path and remove trailing slashes
+      let path = urlObj.pathname;
+      path = path.replace(/\/+$/, '');
+      
+      // Convert to lowercase for case-insensitive comparison
+      return path.toLowerCase();
+    };
+    
+    const oldPath = normalizeUrl(oldUrl);
+    const newPath = normalizeUrl(newUrl);
+    
+    // Check if paths are identical
+    if (oldPath === newPath) {
+      return true;
+    }
+    
+    // Check if one is just the other with a trailing slash
+    if (oldPath + '/' === newPath || oldPath === newPath + '/') {
+      return true;
+    }
+    
+    return false;
+  } catch (e) {
+    console.error(`Error comparing URLs: ${oldUrl} and ${newUrl}`, e);
+    return false;
+  }
+}
+
 // Category mappings
 const categoryMappings = {
   'corrugate': '/product-category/corrugated-boxes/',
@@ -183,6 +223,7 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
   const mapping = [];
   const unmapped = [];
   const categoryMappings = [];
+  const loopDetected = []; // New array to track potential redirect loops
   
   for (let i = 0; i < oldProducts.length; i++) {
     const oldProduct = oldProducts[i];
@@ -190,6 +231,18 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
     // Try SKU matching first for product pages
     if (oldProduct.sku && skuIndex[oldProduct.sku]) {
       const newProduct = skuIndex[oldProduct.sku];
+      
+      // Check for potential redirect loops
+      if (areUrlsEffectivelySame(oldProduct.url, newProduct.url)) {
+        loopDetected.push({
+          oldURL: oldProduct.url,
+          newURL: newProduct.url,
+          reason: 'identical_urls',
+          sku: oldProduct.sku
+        });
+        continue;
+      }
+      
       mapping.push({
         oldURL: oldProduct.url,
         newURL: newProduct.url,
@@ -220,9 +273,21 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
           );
           
           if (categorySlug && categoryMappings[categorySlug]) {
+            const newCategoryUrl = `https://keypak.tbkdev.com${categoryMappings[categorySlug]}`;
+            
+            // Check for potential redirect loops
+            if (areUrlsEffectivelySame(oldProduct.url, newCategoryUrl)) {
+              loopDetected.push({
+                oldURL: oldProduct.url,
+                newURL: newCategoryUrl,
+                reason: 'identical_category',
+              });
+              continue;
+            }
+            
             categoryMappings.push({
               oldURL: oldProduct.url,
-              newURL: `https://keypak.tbkdev.com${categoryMappings[categorySlug]}`,
+              newURL: newCategoryUrl,
               matchType: 'category_redirect',
               similarity: '1.00'
             });
@@ -270,6 +335,19 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
     
     if (bestMatches.length > 0) {
       const bestMatch = bestMatches[0];
+      
+      // Check for potential redirect loops
+      if (areUrlsEffectivelySame(oldProduct.url, bestMatch.url)) {
+        loopDetected.push({
+          oldURL: oldProduct.url,
+          newURL: bestMatch.url,
+          reason: 'identical_product',
+          oldName: productName,
+          newName: extractProductName(bestMatch.url)
+        });
+        continue;
+      }
+      
       const similarity = calculateNameSimilarity(productName, extractProductName(bestMatch.url));
       
       let matchType;
@@ -296,17 +374,37 @@ function processBatch(oldProducts, newProductIndex, skuIndex) {
     }
   }
   
-  return { mapping, unmapped, categoryMappings };
+  return { mapping, unmapped, categoryMappings, loopDetected };
 }
 
 // Main function to generate URL mapping
 async function generateURLMapping() {
-  console.log("Generating URL mapping with SKU matching...");
+  console.log("Generating URL mapping with SKU matching and loop detection...");
 
   try {
-    // Remote CSV file URLs
-    const oldUrlsFile = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/old-urls-ZUpQOAF2HhWXikcmRjXi9WlKLU4HA8.csv';
-    const newUrlsFile = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/new-urls-vgNeLmyWAN9yv8fCknKBLiecN730fZ.csv';
+    // Get the directory of the current script
+    const scriptDir = __dirname;
+    
+    // Local CSV file paths
+    const oldUrlsFile = path.join(scriptDir, 'old-urls.csv');
+    const newUrlsFile = path.join(scriptDir, 'new-urls.csv');
+    
+    console.log(`Looking for CSV files in: ${scriptDir}`);
+    console.log(`Old URLs file: ${oldUrlsFile}`);
+    console.log(`New URLs file: ${newUrlsFile}`);
+    
+    // Check if files exist
+    if (!fs.existsSync(oldUrlsFile)) {
+      console.error(`Error: File not found: ${oldUrlsFile}`);
+      console.error('Please make sure old-urls.csv is in the same directory as this script.');
+      return;
+    }
+    
+    if (!fs.existsSync(newUrlsFile)) {
+      console.error(`Error: File not found: ${newUrlsFile}`);
+      console.error('Please make sure new-urls.csv is in the same directory as this script.');
+      return;
+    }
     
     // Fetch URLs with SKUs
     const oldURLs = await fetchCSV(oldUrlsFile);
@@ -350,6 +448,7 @@ async function generateURLMapping() {
     let allMappings = [];
     let allUnmapped = [];
     let allCategoryMappings = [];
+    let allLoopDetected = []; // Track all potential redirect loops
     
     for (let batchNum = 0; batchNum < totalBatches; batchNum++) {
       console.log(`\nProcessing batch ${batchNum + 1} of ${totalBatches}...`);
@@ -358,22 +457,25 @@ async function generateURLMapping() {
       const endIndex = Math.min((batchNum + 1) * batchSize, oldURLs.length);
       const batchURLs = oldURLs.slice(startIndex, endIndex);
       
-      const { mapping, unmapped, categoryMappings } = processBatch(batchURLs, newProductIndex, skuIndex);
+      const { mapping, unmapped, categoryMappings, loopDetected } = processBatch(batchURLs, newProductIndex, skuIndex);
       
       console.log(`Batch ${batchNum + 1} results:`);
       console.log(`- Mapped: ${mapping.length} URLs`);
       console.log(`- Unmapped: ${unmapped.length} URLs`);
       console.log(`- Categories: ${categoryMappings.length} URLs`);
+      console.log(`- Potential loops: ${loopDetected.length} URLs`);
       
       allMappings = allMappings.concat(mapping);
       allUnmapped = allUnmapped.concat(unmapped);
       allCategoryMappings = allCategoryMappings.concat(categoryMappings);
+      allLoopDetected = allLoopDetected.concat(loopDetected);
     }
 
     console.log(`\nFinal results:`);
     console.log(`Successfully mapped ${allMappings.length} product URLs`);
     console.log(`Unable to map ${allUnmapped.length} product URLs`);
     console.log(`Found ${allCategoryMappings.length} category URLs`);
+    console.log(`Detected ${allLoopDetected.length} potential redirect loops (skipped)`);
 
     // Count match types
     const matchTypeCounts = {};
@@ -398,6 +500,15 @@ async function generateURLMapping() {
 
     console.log("\nSample of unmapped URLs:");
     allUnmapped.slice(0, 5).forEach(url => console.log(`- ${url}`));
+    
+    // Sample of detected loops
+    if (allLoopDetected.length > 0) {
+      console.log("\nSample of detected redirect loops (skipped):");
+      allLoopDetected.slice(0, 5).forEach(loop => {
+        console.log(`- ${loop.oldURL} → ${loop.newURL}`);
+        console.log(`  Reason: ${loop.reason}`);
+      });
+    }
 
     // Save complete results to CSV file
     let fullCsvContent = "old_url,new_url,old_name,new_name,match_type,similarity,sku\n";
@@ -415,11 +526,26 @@ async function generateURLMapping() {
     });
     
     // Write to file
-    fs.writeFileSync('complete-url-mapping.csv', fullCsvContent);
-    console.log("\nComplete CSV file has been saved as 'complete-url-mapping.csv'");
+    const outputFile = path.join(scriptDir, 'complete-url-mapping.csv');
+    fs.writeFileSync(outputFile, fullCsvContent);
+    console.log(`\nComplete CSV file has been saved as: ${outputFile}`);
+    
+    // Save detected loops to a separate CSV file
+    if (allLoopDetected.length > 0) {
+      let loopsCsvContent = "old_url,new_url,reason,old_name,new_name,sku\n";
+      
+      allLoopDetected.forEach(({ oldURL, newURL, reason, oldName, newName, sku }) => {
+        loopsCsvContent += `"${oldURL}","${newURL}","${reason}","${oldName || ''}","${newName || ''}","${sku || ''}"\n`;
+      });
+      
+      const loopsFile = path.join(scriptDir, 'skipped-loops.csv');
+      fs.writeFileSync(loopsFile, loopsCsvContent);
+      console.log(`\nPotential redirect loops have been saved as: ${loopsFile}`);
+    }
 
   } catch (error) {
     console.error("Error in URL mapping process:", error);
+    console.error(error.stack);
   }
 }
 
