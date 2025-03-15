@@ -1,18 +1,17 @@
-
-### Part 1: Introduction and Key Features
-
 # URL Mapper
 
 A tool for mapping URLs from an old website to a new website, perfect for creating 301 redirects during site migrations.
 
+
 ## 📋 Overview
 
-This tool helps you create a mapping between URLs on an old website and their corresponding URLs on a new website. It's especially useful when migrating a website and you need to set up 301 redirects to maintain SEO value and prevent broken links.
+When migrating a website, it’s crucial to set up proper redirects to prevent broken links and maintain SEO rankings. This tool simplifies the process by mapping old URLs to new ones automatically.
 
-### Key Features
+
+### **Key Features**
 
 - **General URL redirects** for blogs, articles, and content pages
-- **SKU-based matching for E-commerce** for precise product URL mapping
+- **SKU-based matching for e-commerce** for precise product URL mapping
 - **Name-based similarity matching** as a fallback
 - **Category redirect** support
 - **Redirect loop detection** to prevent infinite loops
@@ -20,116 +19,107 @@ This tool helps you create a mapping between URLs on an old website and their co
 - **Detailed reporting** of match types and results
 - **Highly customizable** for different website structures and needs
 
-## 🔍 How It Works
-
-1. **SKU Matching**: First tries to match products by SKU
-2. **Name-Based Matching**: Falls back to matching by product name similarity
-3. **Category Mapping**: Maps category pages using the category mappings
-4. **Loop Detection**: Identifies and skips potential redirect loops
-
-## 🛠️ Adapting for Different URL Structures
-
-### WordPress to Shopify Migration
-
-```javascript
-const CONFIG = {
-  newSiteBaseUrl: 'https://myshopify.com',
-  productUrlPatterns: ['/product/', '/shop/'],
-  categoryUrlPatterns: ['/product-category/', '/shop/'],
-  categoryMappings: {
-    'product-category/shirts': '/collections/shirts',
-    'product-category/pants': '/collections/pants',
-  }
-};
-```
-
 ## 🚀 Getting Started
 
-### Prerequisites
+### **1️⃣ Download the Project**
 
-- [Node.js](https://nodejs.org/) (version 14 or higher)
-- Two CSV files:
-  - Old URLs with SKUs
-  - New URLs with SKUs
+- Click the **"Code"** button at the top of this GitHub page.
+- Select **"Download ZIP"** or clone using:
+  ```sh
+  git clone https://github.com/your-repo.git
+  ```
 
-### Installation
+### **2️⃣ Open Your Terminal**
 
-1. **Clone or download** this repository to your computer
+- If you are on Windows, open **Command Prompt** (search for `cmd`).
+- If you are on macOS or Linux, open **Terminal**.
 
-2. **Open a terminal or command prompt**
+### **3️⃣ Navigate to the Project Folder**
 
-3. **Navigate to the project folder**:
+```sh
+cd path/to/url-mapper
+```
 
-   `cd path/to/url-mapper`
+### **4️⃣ Initialize Your Project (Only if Needed)**
 
-5. **Install dependencies** (only needed once):
+If your project does not already contain a `package.json` file, run:
 
-  `npm install`
+```sh
+npm init -y
+```
+
+This will generate a `package.json` file with default settings.
+
+### **5️⃣ Install Required Dependencies**
+
+```sh
+npm install
+```
+
+> `npm install` downloads all the required dependencies for this project.
+
+### **6️⃣ Run the Script**
+
+```sh
+node url-mapper.js
+```
+
+---
 
 ## 📊 Preparing Your Data
 
-The script requires two CSV files with SKUs and URLs:
+The script processes two CSV files containing old and new URLs. 
 
-### 1. `old-urls.csv`
+### **1️⃣ `old-urls.csv`** (Old Website)
 
-Contains SKUs and URLs from your **old website**
+| SKU | Old URL |
+|-----|--------------------------------|
+| 123 | https://oldsite.com/product/123 |
+| 456 | https://oldsite.com/product/456 |
 
-### 2. `new-urls.csv`
+### **2️⃣ `new-urls.csv`** (New Website)
 
-Contains SKUs and URLs from your **new website**
+| SKU | New URL |
+|-----|--------------------------------|
+| 123 | https://newsite.com/products/123 |
+| 456 | https://newsite.com/products/456 |
 
-**Note**: The script supports various formats (comma, tab, or space-separated) and can handle URLs with or without the domain.
+✅ The script supports **comma, tab, and space-separated files**.
 
-## 🔧 Customizing for Your Needs
 
-The script is designed to be highly adaptable to different website structures and redirect needs. Here's how to customize it for your specific project:
+## 🔧 Customization Options
 
-### Basic Customization
+This tool is designed to adapt to different website structures. You can customize settings by modifying the `CONFIG` object inside `generic-url-mapper.js`.
 
-Open `generic-url-mapper.js` in a text editor and modify the `CONFIG` object at the top:
+### **Basic Customization**
 
 ```javascript
 const CONFIG = {
-  // Input/Output files
   oldUrlsFile: 'old-urls.csv',
   newUrlsFile: 'new-urls.csv',
   outputFile: 'url-mapping.csv',
   loopsFile: 'skipped-loops.csv',
-  
-  // Base URL for the new site (used for category redirects)
   newSiteBaseUrl: 'https://example.com',
-  
-  // CSV parsing options
   csvDelimiters: [',', '\t', ';', ' '],
   hasHeaderRow: 'auto',
-  
-  // Matching options
   similarityThreshold: 0.5,
   highConfidenceThreshold: 0.8,
   mediumConfidenceThreshold: 0.6,
-  
-  // URL patterns
   productUrlPatterns: ['/product/', '/shop/'],
   categoryUrlPatterns: ['/product-category/', '/category/'],
-  
-  // Category mappings (old category slug -> new category path)
   categoryMappings: {
     'old-category': '/new-category-path/',
   },
-  
-  // Batch processing to manage memory usage
   batchSize: 250,
-  
-  // Debug options
   verbose: true,
   showSamples: true,
   sampleSize: 5
 };
 ```
 
-### Customization Examples for Different Website Types
+### **Custom Configuration for Different Website Types**
 
-#### E-commerce Site
+#### 🛒 **E-commerce Site**
 
 ```javascript
 const CONFIG = {
@@ -144,7 +134,7 @@ const CONFIG = {
 };
 ```
 
-#### Blog or Content Site
+#### 📝 **Blog or Content Site**
 
 ```javascript
 const CONFIG = {
@@ -159,7 +149,7 @@ const CONFIG = {
 };
 ```
 
-#### Corporate Site
+#### 🏢 **Corporate Website**
 
 ```javascript
 const CONFIG = {
@@ -175,63 +165,58 @@ const CONFIG = {
 ```
 
 
-### Part 4: More Customization Options
+## 🏃‍♂️ Running the Script
 
-### Adjusting Matching Behavior
+### **1️⃣ Ensure Your CSV Files Are in the Correct Location**
 
-#### For Stricter Matching
+- Place `old-urls.csv` and `new-urls.csv` in the same folder as `url-mapper.js`
+
+### **2️⃣ Run the Script**
+
+```sh
+node url-mapper.js
+```
+
+### **3️⃣ Wait for Processing**
+
+- Large datasets may take a few minutes.
+
+### **4️⃣ Review the Output**
+
+After running the script, you’ll see:
+
+- ✅ **`url-mapping.csv`**: The final list of redirects.
+- ❌ **`skipped-loops.csv`**: Redirects that could cause infinite loops.
+
+
+## 🔍 Adjusting Matching Behavior
+
+### **Stricter Matching (Higher Accuracy, Fewer Matches)**
 
 ```javascript
 const CONFIG = {
-  similarityThreshold: 0.7,  // Higher threshold requires closer matches
+  similarityThreshold: 0.7,
   highConfidenceThreshold: 0.9,
   mediumConfidenceThreshold: 0.8,
 };
 ```
 
-#### For More Lenient Matching
+### **More Lenient Matching (More Matches, Less Precision)**
 
-``` javascript
+```javascript
 const CONFIG = {
-  similarityThreshold: 0.3,  // Lower threshold allows more distant matches
+  similarityThreshold: 0.3,
   highConfidenceThreshold: 0.7,
   mediumConfidenceThreshold: 0.5,
 };
 ```
 
 
-### Part 5: Running and Understanding Results
+## ❓ Need Help?
 
-## 🏃‍♂️ Running the Script
+If you run into issues, feel free to open an issue on this GitHub repository.
 
-1. **Place your CSV files** in the same folder as the script (ensure they are named correctly: `old-urls.csv` and `new-urls.csv`)
+---
 
-2. `cd` into the directory with the Git Repo files
-
-3. Install the dependencies and initialize node
-
-  `npm install`
-
-5. Run the script to begin teh mapping:
-
-    `node url-mapper.js`
-   
-6. **Wait for processing** to complete (this may take a few minutes for large datasets)
-
-
-## 📈 Understanding the Results
-
-The script generates two output files:
-
-### 1. `url-mapping.csv`
-
-This ontains all valid redirects
-
-### 2. `skipped-loops.csv`
-
-Contains potential redirect loops that were skipped
-
-
-
-
+This README is designed for **beginner developers** and ensures that setting up the URL Mapper is straightforward and hassle-free. 🚀
 
