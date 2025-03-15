@@ -2,11 +2,13 @@
 
 A tool for mapping URLs from an old website to a new website, perfect for creating 301 redirects during site migrations.
 
+<br>
 
 ## 📋 Overview
 
 When migrating a website, it’s crucial to set up proper redirects to prevent broken links and maintain SEO rankings. This tool simplifies the process by mapping old URLs to new ones automatically.
 
+<br>
 
 ### **Key Features**
 
@@ -18,6 +20,8 @@ When migrating a website, it’s crucial to set up proper redirects to prevent b
 - **Batch processing** for handling large datasets
 - **Detailed reporting** of match types and results
 - **Highly customizable** for different website structures and needs
+
+<br>
 
 ## 🚀 Getting Started
 
@@ -63,12 +67,12 @@ npm install
 ```sh
 node url-mapper.js
 ```
-
----
+<br>
+<hr>
 
 ## 📊 Preparing Your Data
 
-The script processes two CSV files containing old and new URLs. 
+The script processes two CSV files containing old and new URLs.
 
 ### **1️⃣ `old-urls.csv`** (Old Website)
 
@@ -86,6 +90,68 @@ The script processes two CSV files containing old and new URLs.
 
 ✅ The script supports **comma, tab, and space-separated files**.
 
+### SKU Column Requirements
+
+The SKU column is **not strictly required** for the URL Mapper script to work, but removing it will change how the script functions.
+
+### How the Script Works With and Without SKUs
+
+✅ **With SKUs (Recommended for E-commmerce Sites):**
+- SKU-based matching is the primary strategy, providing the most **accurate** and **reliable** URL mapping.
+- Matches will have a confidence level of **1.00**.
+- The output match type will be labeled as `"sku_match"`.
+
+❌ **Without SKUs (Alternative):**
+- The script will fall back to **name-based similarity matching**.
+- It extracts product names from URLs and compares them.
+- Matches rely on **text similarity**, which may have a lower confidence level.
+- Output match types will be labeled as `"exact_match"`, `"high_confidence_match"`, etc.
+
+<hr>
+
+### How to Modify the CSV Files
+
+If you want to remove the SKU column:
+
+✅ **Option 1:** Keep the same CSV structure but leave SKU values empty:
+```csv
+SKU,URL
+,/product/carton-sealing-tape
+,/product/vibac-tape
+```
+
+✅ **Option 2:** Use a single-column format (URLs only):
+```csv
+/product/carton-sealing-tape
+/product/vibac-tape
+```
+⚠ **If using the second format, you must modify the script to handle single-column CSVs.**
+
+In `fetchCSV`, modify this section:
+```javascript
+if (parts.length >= 2) {
+  const sku = parts[0];
+  const url = parts[1];
+  entries.push({ sku, url });
+} else {
+  log(`Warning: Line has insufficient columns: ${line}`);
+}
+```
+Change it to:
+```javascript
+if (parts.length >= 2) {
+  const sku = parts[0];
+  const url = parts[1];
+  entries.push({ sku, url });
+} else if (parts.length === 1) {
+  // Handle single-column CSV (URL only)
+  const url = parts[0];
+  entries.push({ sku: '', url });
+} else {
+  log(`Warning: Line has insufficient columns: ${line}`);
+}
+```
+<hr>
 
 ## 🔧 Customization Options
 
@@ -116,6 +182,8 @@ const CONFIG = {
   sampleSize: 5
 };
 ```
+
+<hr>
 
 ### **Custom Configuration for Different Website Types**
 
@@ -163,7 +231,8 @@ const CONFIG = {
   }
 };
 ```
-
+<br>
+<hr>
 
 ## 🏃‍♂️ Running the Script
 
@@ -188,6 +257,8 @@ After running the script, you’ll see:
 - ✅ **`url-mapping.csv`**: The final list of redirects.
 - ❌ **`skipped-loops.csv`**: Redirects that could cause infinite loops.
 
+<br>
+<hr>
 
 ## 🔍 Adjusting Matching Behavior
 
@@ -211,12 +282,11 @@ const CONFIG = {
 };
 ```
 
+<br>
+---
 
 ## ❓ Need Help?
 
 If you run into issues, feel free to open an issue on this GitHub repository.
 
----
-
-This README is designed for **beginner developers** and ensures that setting up the URL Mapper is straightforward and hassle-free. 🚀
 
